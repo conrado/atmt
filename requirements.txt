@@ -1,0 +1,4 @@
+lxml==3.0.1
+rauth==0.4.17
+requests==1.1.0
+simplejson==2.6.2
