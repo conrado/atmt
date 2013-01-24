@@ -28,10 +28,11 @@ config.add_section('ClientTokens')
 config.read(filename)
 
 client_id = config.get('ApplicationTokens', 'client_id')
-if client_id == "None":
+if client_id in ["None", None]:
+    print "Create a client here: https://www.assembla.com/user/edit/manage_clients"
     client_id = raw_input("Please type enter your Client ID: ")
 client_secret = config.get('ApplicationTokens', 'client_secret')
-if client_secret == "None":
+if client_secret in ["None", None]:
     client_secret = raw_input("Please type enter your Client Secret: ")
 
 print "We require an Assembla account info to download documents"
