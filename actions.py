@@ -36,8 +36,8 @@ def copy_ticket_statuses(space1, space2):
         else:
             logger.debug('[TicketStatus] Skipping %s', status.name)
     for status in missing:
+        logger.debug('[TicketStatus] Creating %s',status.name)
         s=space2.create_ticket_status(status)
-        logger.debug('[TicketStatus] Created %s',status.name)
     logger.debug('[TicketStatus] Finished')
 
 def copy_ticket_custom_fields(space1, space2):
@@ -51,8 +51,8 @@ def copy_ticket_custom_fields(space1, space2):
         else:
             logger.debug('[TicketCustomField] Skipping %s',field.title)
     for field in missing:
+        logger.debug('[TicketCustomField] Creating %s',field.title)
         space2.create_custom_field(field)
-        logger.debug('[TicketCustomField] Created %s',field.title)
     logger.debug('[TicketCustomField] Finished')
 
 def copy_ticket_components(space1, space2):
@@ -69,10 +69,13 @@ def copy_ticket_components(space1, space2):
             missing.append(component)
         else:
             mapping[component.id] = existing_comp_map[component.name]
-            logger.debug('[TicketCustomField] Skipping %s',component.name)
+            logger.debug('[TicketComponent] Skipping %s',component.name)
+    logger.debug('[TicketComponent] Found %s missing components: %s',
+        len(missing), ', '.join([c.name for c in missing]))
     for component in missing:
+        logger.debug('[TicketComponent] Creating %s',component.name)
         tc=space2.create_component(component)
-        logger.debug('[TicketCustomField] Created %s',component.name)
+        logger.debug('[TicketComponent] Created with id: %s', tc.id)
         mapping[component.id] = tc.id
     # Ticket component IDs may differ, return a mapping for new components
     logger.debug('[TicketComponent] Finished')
@@ -94,6 +97,7 @@ def copy_milestones(space1, space2):
             mapping[milestone.id] = existing_ms_map[milestone.title]
             logger.debug('[Milestone] Skipping %s', milestone.title)
     for milestone in missing:
+        logger.debug('[Milestone] Creating %s', milestone.title)
         ms=space2.create_milestone(milestone)
         mapping[milestone.id] = ms.id
     logger.debug('[Milestone] Finished')
@@ -121,8 +125,9 @@ def copy_document(file_id, ticket1, ticket2, auth=None):
         raise AssemblaError('Failed login on file download: ',
                 response=login_response.status_code)
     response=client.get(olddoc.url)
+    logger.debug('[Document] Attaching %s', olddoc.name)
     newdoc=ticket2.attach_file(response, olddoc)
-    logger.debug('[Document] Attached %s', newdoc.id)
+    logger.debug('[Document] Attached with id: %s', newdoc.id)
     logger.debug('[Document] Finished')
 
 def copy_ticket_comments(ticket1, ticket2, number_map, auth=None):
@@ -136,11 +141,13 @@ def copy_ticket_comments(ticket1, ticket2, number_map, auth=None):
         else:
             if c_text:
                 c.comment = remap_references(c.comment, number_map)
+                logger.debug('[TicketComment] Creating for %s', c.id)
                 c = ticket2.create_comment(c)
                 logger.debug('[TicketComment] Created %s', c.id)
             else:
                 # emulate system comment through regular comment
                 c.comment = prettify(c.ticket_changes)
+                logger.debug('[TicketComment] Emulating for %s', c.id)
                 c = ticket2.create_comment(c)
                 logger.debug('[TicketComment] Emulated %s', c.id)
     logger.debug('[TicketComment] Finished')
@@ -155,8 +162,9 @@ def copy_ticket(ticket1, space2, component_map, milestone_map,
         tcopy.component_id = component_map[tcopy.component_id]
     tcopy.number = number_map[tcopy.number]
     tcopy.description = remap_references(tcopy.description, number_map)
+    logger.debug('[Ticket] Creating ticket number %s', tcopy.number)
     ticket2 = space2.create_ticket(tcopy)
-    logger.debug('[Ticket] Created %s', ticket2.id)
+    logger.debug('[Ticket] Created with id %s', ticket2.id)
     copy_ticket_comments(ticket1, ticket2, number_map, auth)
     logger.debug('[Ticket] Finished')
     return ticket2
@@ -196,9 +204,10 @@ def copy_ticket_associations(space1, space2, id_map, number_map):
             # fix API glitch
             if t2.id == id_map[ass_t2_id]:
                 ass1.invert()
-            t2.create_association(ass1)
             logger.debug('[TicketAssociation] Associating %s - %s',
                     ass1.ticket1_id, ass1.ticket2_id)
+            t2.create_association(ass1)
+            logger.debug('[TicketAssociation] Associated')
     logger.debug('[TicketAssociation] Finished')
 
 def prepare_space_fields(space1, space2):

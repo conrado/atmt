@@ -245,6 +245,10 @@ class TicketCustomField(Model):
 
 class TicketComponent(Model):
 
+    def __init__(self, name, api=None):
+        super(TicketComponent, self).__init__(api = api)
+        self.name = name
+
     @classmethod
     def parse(cls, api, json):
         component = cls(api)
@@ -256,6 +260,8 @@ class TicketComponent(Model):
         pickle = {'component': self.name}
         return json.dumps(pickle)
 
+    def __str__(self):
+        return self.name
 
 class TicketAssociation(Model):
 
