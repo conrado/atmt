@@ -19,7 +19,7 @@ def prettify(changes):
     return changes
 
 def remap_references(line, number_map):
-    refs = set([int(ref) for ref in re.findall(r'#([0-9]+)', line)])
+    refs = {int(ref) for ref in re.findall(r'#([0-9]+)', line)}
     for r in refs:
         nm = number_map.get(r, 'not-copied')
         line = line.replace('#%s' % r, '#%s' % nm)
@@ -218,21 +218,20 @@ def check_ticket_numbers(space1, space2, ticket_numbers, renumber=False):
             tickets.append(space1.get_ticket(n))
     else:
         tickets = space1.get_tickets()
-    found_same_number = False
     if not renumber:
         for t in tickets:
+            logger.debug('[TicketNumbers] Checking ticket %s' % t.number)
             try:
                 t2 = space2.get_ticket(t.number)
                 if t2:
-                    found_same_number = True
-                    break
+                    logger.debug('[TicketNumbers] Ticket %s exists' % t.number)
+                    return None, None
             except AssemblaError, e:
                 if not e.reason.startswith("Couldn't find Ticket"):
                     raise e
-        if found_same_number:
-            logger.debug('[TicketNumbers] Failed sanity check')
-            return None, None
-        return tickets, dict(zip(ticket_numbers, ticket_numbers))
+        else:
+            logger.debug('[TicketNumbers] Finished sanity check')
+            return tickets, dict(zip(ticket_numbers, ticket_numbers))
     temp_ticket = deepcopy(tickets[0])
     temp_ticket.number = None
     temp_ticket = space2.create_ticket(temp_ticket)
