@@ -1,10 +1,9 @@
 from assembla.error import AssemblaError
 import logging
-FORMAT = "%(asctime)-15s %(message)s"
-logging.basicConfig(format=FORMAT)
+import re
+from copy import deepcopy
 
 logger = logging.getLogger('ATMT')
-logger.setLevel(logging.DEBUG)
 
 def prettify(changes):
     if isinstance(changes,str) or isinstance(changes,unicode):
@@ -18,6 +17,13 @@ def prettify(changes):
                 return after
             before = after
     return changes
+
+def remap_references(line, number_map):
+    refs = set([int(ref) for ref in re.findall(r'#([0-9]+)', line)])
+    for r in refs:
+        nm = number_map.get(r, 'not-copied')
+        line = line.replace('#%s' % r, '#%s' % nm)
+    return line
 
 def copy_ticket_statuses(space1, space2):
     logger.debug('[TicketStatus] Starting')
@@ -119,7 +125,7 @@ def copy_document(file_id, ticket1, ticket2, auth=None):
     logger.debug('[Document] Attached %s', newdoc.id)
     logger.debug('[Document] Finished')
 
-def copy_ticket_comments(ticket1, ticket2, auth=None):
+def copy_ticket_comments(ticket1, ticket2, number_map, auth=None):
     logger.debug('[TicketComment] Starting')
     comments = ticket1.get_comments()
     for c in comments:
@@ -129,6 +135,7 @@ def copy_ticket_comments(ticket1, ticket2, auth=None):
                 copy_document(c.file, ticket1, ticket2, auth)
         else:
             if c_text:
+                c.comment = remap_references(c.comment, number_map)
                 c = ticket2.create_comment(c)
                 logger.debug('[TicketComment] Created %s', c.id)
             else:
@@ -138,15 +145,19 @@ def copy_ticket_comments(ticket1, ticket2, auth=None):
                 logger.debug('[TicketComment] Emulated %s', c.id)
     logger.debug('[TicketComment] Finished')
 
-def copy_ticket(ticket1, space2, component_map, milestone_map, auth=None):
+def copy_ticket(ticket1, space2, component_map, milestone_map,
+        number_map, auth=None):
     logger.debug('[Ticket] Starting')
-    if ticket1.milestone_id:
-        ticket1.milestone_id = milestone_map[ticket1.milestone_id]
-    if ticket1.component_id:
-        ticket1.component_id = component_map[ticket1.component_id]
-    ticket2 = space2.create_ticket(ticket1)
+    tcopy = deepcopy(ticket1)
+    if tcopy.milestone_id:
+        tcopy.milestone_id = milestone_map[tcopy.milestone_id]
+    if tcopy.component_id:
+        tcopy.component_id = component_map[tcopy.component_id]
+    tcopy.number = number_map[tcopy.number]
+    tcopy.description = remap_references(tcopy.description, number_map)
+    ticket2 = space2.create_ticket(tcopy)
     logger.debug('[Ticket] Created %s', ticket2.id)
-    copy_ticket_comments(ticket1, ticket2, auth)
+    copy_ticket_comments(ticket1, ticket2, number_map, auth)
     logger.debug('[Ticket] Finished')
     return ticket2
 
@@ -159,58 +170,101 @@ def check_association_ambivalent(a1, a2, id_map):
     return r
 
 
-def copy_ticket_associations(space1, space2, ticket_map):
+def copy_ticket_associations(space1, space2, id_map, number_map):
     logger.debug('[TicketAssociation] Starting')
-    for t2 in space2.get_tickets():
+    for n in number_map:
+        t2 = space2.get_ticket(number_map[n])
         logger.debug('[TicketAssociation] Processing %s', t2.id)
-        t1 = space1.get_ticket(t2.number)
+        t1 = space1.get_ticket(n)
         for ass1 in t1.get_associations():
             # skip if associated ticket not copied
-            if ass1.ticket1_id not in ticket_map or \
-                    ass1.ticket2_id not in ticket_map:
+            if ass1.ticket1_id not in id_map or \
+                    ass1.ticket2_id not in id_map:
                 logger.debug('[TicketAssociation] Skipping %s', ass1.id)
                 continue
             # skip if association already exists
             exists = False
             for ass2 in t2.get_associations():
-                exists = check_association_ambivalent(ass1, ass2, ticket_map)
+                exists = check_association_ambivalent(ass1, ass2, id_map)
             if exists:
                 logger.debug('[TicketAssociation] Skipping %s', ass1.id)
                 continue
 
             ass_t2_id = ass1.ticket2_id
-            ass1.ticket1_id = ticket_map[ass1.ticket1_id]
-            ass1.ticket2_id = ticket_map[ass1.ticket2_id]
+            ass1.ticket1_id = id_map[ass1.ticket1_id]
+            ass1.ticket2_id = id_map[ass1.ticket2_id]
             # fix API glitch
-            if t2.id == ticket_map[ass_t2_id]:
+            if t2.id == id_map[ass_t2_id]:
                 ass1.invert()
             t2.create_association(ass1)
             logger.debug('[TicketAssociation] Associating %s - %s',
                     ass1.ticket1_id, ass1.ticket2_id)
     logger.debug('[TicketAssociation] Finished')
 
-def migrate_space_tickets(space1, space2, ticket_numbers=None, auth=None):
-    logger.debug('[Migration] Starting')
-    # prepare space
+def prepare_space_fields(space1, space2):
     logger.debug('[Migration] Preparing space')
     copy_ticket_statuses(space1, space2)
     copy_ticket_custom_fields(space1, space2)
     component_map = copy_ticket_components(space1, space2)
     milestone_map = copy_milestones(space1, space2)
     logger.debug('[Migration] Finished preparing space')
-    # process tickets
-    logger.debug('[Migration] Copying tickets from %s to %s',
-            space1.name, space2.name)
+    return (component_map, milestone_map)
+
+def check_ticket_numbers(space1, space2, ticket_numbers, renumber=False):
+    logger.debug('[TicketNumbers] Starting sanity check (may take a while)')
     tickets = []
-    ticket_mapping = {}
     if ticket_numbers:
         for n in ticket_numbers:
             tickets.append(space1.get_ticket(n))
     else:
         tickets = space1.get_tickets()
+    found_same_number = False
+    if not renumber:
+        for t in tickets:
+            try:
+                t2 = space2.get_ticket(t.number)
+                if t2:
+                    found_same_number = True
+                    break
+            except AssemblaError, e:
+                if not e.reason.startswith("Couldn't find Ticket"):
+                    raise e
+        if found_same_number:
+            logger.debug('[TicketNumbers] Failed sanity check')
+            return None, None
+        return tickets, dict(zip(ticket_numbers, ticket_numbers))
+    temp_ticket = deepcopy(tickets[0])
+    temp_ticket.number = None
+    temp_ticket = space2.create_ticket(temp_ticket)
+    start = temp_ticket.number
+    end = start+len(tickets)
+    ticket_number_map = dict(zip([t.number for t in tickets], range(start,end)))
+    temp_ticket.destroy()
+    logger.debug('[TicketNumbers] Finished sanity check')
+    return tickets, ticket_number_map
+
+def copy_tickets(tickets, space1, space2, component_map, milestone_map,
+        number_map, auth=None):
+    logger.debug('[Migration] Starting Ticket copy from %s to %s',
+            space1.name, space2.name)
+    ticket_id_map = {}
     for t in tickets:
-        ticket2 = copy_ticket(t, space2, component_map, milestone_map, auth)
-        ticket_mapping[t.id] = ticket2.id
-    logger.debug('[Migration] Finished copying tickets')
-    copy_ticket_associations(space1, space2, ticket_mapping)
+        ticket2 = copy_ticket(t, space2, component_map, milestone_map, number_map, auth=auth)
+        ticket_id_map[t.id] = ticket2.id
+    logger.debug('[Migration] Finished Ticket copy')
+    return ticket_id_map
+
+def migrate_tickets(space1, space2, ticket_numbers=None, auth=None,
+        renumber=False):
+    logger.debug('[Migration] Starting')
+    component_map, milestone_map = prepare_space_fields(space1, space2)
+    tickets, number_map = check_ticket_numbers(space1, space2, ticket_numbers,
+            renumber=renumber)
+    if tickets == None:
+        logger.debug('[Migration] Ticket numbers failed sanity check, exiting')
+        return None
+    ticket_id_map = copy_tickets(tickets, space1, space2, component_map,
+            milestone_map, number_map, auth=auth)
+    copy_ticket_associations(space1, space2, ticket_id_map, number_map)
     logger.debug('[Migration] Finished')
+    return number_map

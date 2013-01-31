@@ -1,6 +1,4 @@
-from assembla.error import AssemblaError
-from assembla.utils import parse_datetime, parse_date, parse_html_value, \
-        parse_a_href, parse_search_datetime, unescape_html, parse_file
+from assembla.utils import parse_datetime, parse_date, parse_file
 
 from utils import import_simplejson, DateTimeJSONEncoder
 
@@ -239,6 +237,8 @@ class TicketCustomField(Model):
 
     def toJSON(self):
         pickle = self.__getstate__()
+        if pickle['list_options']:
+            pickle['list_options'] = ','.join(pickle['list_options'])
         pickle = {'custom_field': pickle}
         return json.dumps(pickle, cls=DateTimeJSONEncoder)
 

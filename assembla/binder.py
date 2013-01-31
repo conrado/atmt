@@ -1,11 +1,8 @@
-import httplib
 import urllib
-import time
 import re
 
 from assembla.error import AssemblaError
 from assembla.utils import convert_to_utf8_str
-from assembla.models import Model
 
 re_path_template = re.compile('{\w+}')
 

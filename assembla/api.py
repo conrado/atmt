@@ -1,10 +1,5 @@
-import os
-import mimetypes
-
 from assembla.binder import bind_api
-from assembla.error import AssemblaError
 from assembla.parsers import ModelParser
-from assembla.utils import list_to_csv
 
 from assembla.HttpClient import HttpClient
 

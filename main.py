@@ -1,11 +1,26 @@
-
+import sys
 import os
+import csv
+import logging
 import ConfigParser
 
 from assembla.api import API
 from assembla.error import AssemblaError
 
-from actions import migrate_space_tickets
+from actions import migrate_tickets
+
+logger = logging.getLogger('ATMT')
+logger.setLevel(logging.DEBUG)
+
+FORMAT = "%(asctime)-15s %(message)s"
+formatter = logging.Formatter(FORMAT)
+file_handler = logging.FileHandler('ATMT.log')
+stream_handler = logging.StreamHandler()
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 
 def init_client(client):
     print ("Follow this url: {0}".format(client.getAuthorizeUrl()))
@@ -54,7 +69,6 @@ if bearer_token != "None":
         api.initTokens(bearer_token, refresh_token)
         api.me()
     except AssemblaError:
-        print "Token has expired, please re-enter pincode..."
         api = init_client(api)
         bearer_token = api.client.access_token
         refresh_token = api.client.refresh_token
@@ -76,6 +90,19 @@ with open(tickets, 'r') as ticketfile:
         if l:
             ticketlist.append(int(l))
 
+renumber=False
+assign_new_numbers = raw_input('Re-number copied tickets (if destination is not empty)? [y/N] ')
+if assign_new_numbers == "y":
+    renumber=True
+
+print "************************************************************"
+print "*              About to start ticket migration             *"
+print "*                                                          *"
+print "*    if you'd like to delete instead, skip this step.      *"
+print "*                                                          *"
+print "*                type 'copy' to copy                       *"
+print "************************************************************"
+copy = raw_input("Okay to start copy process? [copy/N] ")
 
 spaces=api.get_spaces()
 sp1 = sp2 = None
@@ -85,14 +112,36 @@ for space in spaces:
     if space.name == space2:
         sp2 = space
 if not sp1 or not sp2:
-    print "Could not find spaces, exiting."
-else:
-    migrate_space_tickets(sp1, sp2, ticket_numbers=ticketlist, auth=auth)
+    logger.debug('[Application] Could not find spaces, exiting.')
+    sys.exit()
 
-print "Migration done!"
-delete = raw_input("Okay to delete tickets? [y/N] ")
-if delete == 'y':
+if copy == 'copy':
+    logger.debug('[Application] Starting Copy Process')
+    nmap = migrate_tickets(sp1, sp2, ticket_numbers=ticketlist, auth=auth,
+            renumber=renumber)
+    with open('ticket_map.csv', 'wb') as csvfile:
+        writer = csv.writer(csvfile, delimiter=',')
+        for n in nmap:
+            writer.writerow([n, nmap[n]])
+    print "************************************************************"
+    print "* For your convenience a file mapping new ticket numbers   *"
+    print "* has been placed in the current directory called:         *"
+    print "*                                                          *"
+    print "*                ticket_map.csv                            *"
+    print "************************************************************"
+    logger.debug('[Application] Finished Copy Process')
+
+print "************************************************************"
+print "*   WARNING!! It is not possible to recover from deletion  *"
+print "*             Re-run tool after checking migration         *"
+print "*             type 'delete' to delete tickets              *"
+print "************************************************************"
+delete = raw_input("Okay to delete tickets RIGHT NOW? [delete/N] ")
+
+if delete == 'delete':
+    logger.debug('[Application] Starting Ticket Deletion')
     for t in ticketlist:
         t = sp1.get_ticket(number=t)
         t.destroy()
-    print "Deleting done!"
+        logger.debug('[Application] Deleted ticket %s from %s', t.number, sp1.name)
+    logger.debug('[Application] Finished Ticket Deletion') 
