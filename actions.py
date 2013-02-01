@@ -19,10 +19,11 @@ def prettify(changes):
     return changes
 
 def remap_references(line, number_map):
-    refs = {int(ref) for ref in re.findall(r'#([0-9]+)', line)}
-    for r in refs:
-        nm = number_map.get(r, 'not-copied')
-        line = line.replace('#%s' % r, '#%s' % nm)
+    if isinstance(line, str) or isinstance(line, unicode):
+        refs = {int(ref) for ref in re.findall(r'#([0-9]+)', line)}
+        for r in refs:
+            nm = number_map.get(r, 'not-copied')
+            line = line.replace('#%s' % r, '#%s' % nm)
     return line
 
 def copy_ticket_statuses(space1, space2):
@@ -70,11 +71,16 @@ def copy_ticket_components(space1, space2):
     missing = []
     mapping = {}
     for component in components1:
-        if component.name not in [c.name for c in components2]:
-            missing.append(component)
+        for comp in missing:
+            if comp.name.lower() == component.name.lower():
+                mapping[component.id] = existing_comp_map[comp.name]
+                break
         else:
-            mapping[component.id] = existing_comp_map[component.name]
-            logger.debug('[TicketComponent] Skipping %s',component.name)
+            if component.id not in mapping:
+                missing.append(component)
+            else:
+                mapping[component.id] = existing_comp_map[component.name]
+                logger.debug('[TicketComponent] Skipping %s',component.name)
     logger.debug('[TicketComponent] Found %s missing components: %s',
         len(missing), ', '.join([c.name for c in missing]))
     for component in missing:
@@ -170,7 +176,13 @@ def copy_ticket(ticket1, space2, component_map, milestone_map,
     logger.debug('[Ticket] Creating ticket number %s', tcopy.number)
     ticket2 = space2.create_ticket(tcopy)
     logger.debug('[Ticket] Created with id %s', ticket2.id)
-    copy_ticket_comments(ticket1, ticket2, number_map, auth)
+    try:
+        copy_ticket_comments(ticket1, ticket2, number_map, auth)
+    except AssemblaError, e:
+        logger.debug("[Ticket] Comments copy failed")
+        space2.delete_ticket(ticket2.number)
+        logger.debug("[Ticket] Deleted ticket %s", ticket2.number)
+        raise e
     logger.debug('[Ticket] Finished')
     return ticket2
 
@@ -261,9 +273,20 @@ def copy_tickets(tickets, space1, space2, component_map, milestone_map,
     logger.debug('[Migration] Starting Ticket copy from %s to %s',
             space1.name, space2.name)
     ticket_id_map = {}
+    new_tickets_id_number_map = {}
     for t in tickets:
-        ticket2 = copy_ticket(t, space2, component_map, milestone_map, number_map, auth=auth)
+        try:
+            ticket2 = copy_ticket(t, space2, component_map, milestone_map, number_map, auth=auth)
+        except AssemblaError, e:
+            logger.debug("[Migration] Got an AssemblaError, body:\n\n%s", e.response.content)
+            logger.debug("[Migration] Revertintg migration")
+            for tid, tnum in new_tickets_id_number_map.items():
+                space2.delete_ticket(tnum)
+                logger.debug("[Migration] Deleted ticket %s", tnum)
+            else:
+                break
         ticket_id_map[t.id] = ticket2.id
+        new_tickets_id_number_map[ticket2.id] = ticket2.number
     logger.debug('[Migration] Finished Ticket copy')
     return ticket_id_map
 
