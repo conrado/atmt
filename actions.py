@@ -1,4 +1,5 @@
 from assembla.error import AssemblaError
+from assembla.models import Ticket
 import logging
 import re
 from copy import deepcopy
@@ -250,13 +251,13 @@ def check_ticket_numbers(space1, space2, ticket_numbers, renumber=False):
         else:
             logger.debug('[TicketNumbers] Finished sanity check')
             return tickets, dict(zip(ticket_numbers, ticket_numbers))
-    temp_ticket = deepcopy(tickets[0])
-    temp_ticket.number = None
+    temp_ticket = Ticket(api=space2._api)
+    temp_ticket.summary="ATMT test ticket to get new ticket number"
     temp_ticket = space2.create_ticket(temp_ticket)
     start = temp_ticket.number
     end = start+len(tickets)
     ticket_number_map = dict(zip([t.number for t in tickets], range(start,end)))
-    temp_ticket.destroy()
+    space2.delete_ticket(temp_ticket)
     logger.debug('[TicketNumbers] Finished sanity check')
     return tickets, ticket_number_map
 

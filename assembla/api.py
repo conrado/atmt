@@ -119,7 +119,7 @@ class API(object):
 
     """ Get space milestones """
     get_milestones = bind_api(
-        path='spaces/{space}/milestones.json',
+        path='spaces/{space}/milestones/all.json',
         method='GET',
         payload_type='milestone', payload_list=True,
         allowed_params = ['space',]

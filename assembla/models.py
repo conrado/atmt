@@ -112,6 +112,9 @@ class Space(Model):
     def create_ticket(self, ticket):
         return self._api.create_ticket(ticket, space=self.id)
 
+    def delete_ticket(self, ticket):
+        return self._api.delete_ticket(ticket=ticket, space=self.id)
+
 class InstantMessenger(Model):
 
     @classmethod
