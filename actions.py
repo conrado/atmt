@@ -61,7 +61,12 @@ def copy_ticket_components(space1, space2):
     components2 = space2.get_components()
     existing_comp_map={}
     for c in components2:
-        existing_comp_map[c.name] = c.id
+        for name, id in existing_comp_map.items():
+            if c.name.lower() == name.lower():
+                existing_comp_map[c.name] = existing_comp_map[name]
+                break
+        else:
+            existing_comp_map[c.name] = c.id
     missing = []
     mapping = {}
     for component in components1:
