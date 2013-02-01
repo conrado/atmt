@@ -24,6 +24,8 @@ def remap_references(line, number_map):
         for r in refs:
             nm = number_map.get(r, 'not-copied')
             line = line.replace('#%s' % r, '#%s' % nm)
+    else:
+        logger.debug('[ReferenceRemap] Skipping unknown type: %s, line: %s', type(line), line)
     return line
 
 def copy_ticket_statuses(space1, space2):
