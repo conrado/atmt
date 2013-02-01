@@ -1,4 +1,5 @@
 from assembla.utils import parse_datetime, parse_date, parse_file
+from assembla.cursor import Cursor
 
 from utils import import_simplejson, DateTimeJSONEncoder
 
@@ -79,8 +80,11 @@ class Space(Model):
     def destroy(self):
         return self._api.delete_space(space=self.id)
 
+    def get_milestone(self, milestone_id):
+        return self._api.get_milestone(space=self.id, milestone=milestone_id)
+
     def get_milestones(self):
-        return self._api.get_milestones(space=self.id)
+        return list(Cursor(self._api.get_milestones, space=self.id).items())
 
     def create_milestone(self, milestone):
         return self._api.create_milestone(milestone, space=self.id)
@@ -104,7 +108,7 @@ class Space(Model):
         return self._api.create_ticket_status(status, space=self.id)
 
     def get_tickets(self):
-        return self._api.get_tickets(space=self.id)
+        return list(Cursor(self._api.get_tickets, space=self.id).items())
 
     def get_ticket(self, number):
         return self._api.get_ticket(space=self.id, ticket=number)
@@ -189,7 +193,7 @@ class Ticket(Model):
         return self._api.create_association(association, space=self.space_id, ticket=self.number)
 
     def get_comments(self):
-        return self._api.get_ticket_comments(space=self.space_id, ticket=self.number)
+        return list(Cursor(self._api.get_ticket_comments, space=self.space_id, ticket=self.number).items())
 
     def create_comment(self, comment):
         return self._api.create_ticket_comment(comment, space=self.space_id, ticket=self.number)
@@ -203,6 +207,10 @@ class Ticket(Model):
 
     def get_document(self, fileid):
         return self._api.get_document(space=self.space_id, document=fileid)
+
+    def get_milestone(self):
+        return self._api.get_milestone(space=self.space_id, milestone=self.milestone_id)
+
 
 class TicketComment(Model):
 

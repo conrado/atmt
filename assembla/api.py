@@ -48,7 +48,7 @@ class API(object):
 
     """ Get users belonging to a space """
     get_space_users = bind_api(
-        path="users/{space}.json",
+        path="spaces/{space}/users.json",
         payload_type="user", payload_list = True,
         allowed_param = ['space']
     )
@@ -57,8 +57,9 @@ class API(object):
     get_space_tickets = bind_api(
         path='spaces/{space}/tickets.json',
         payload_type="ticket", payload_list = True,
-        allowed_params = ['space']
+        allowed_params = ['space', 'page', 'per_page']
     )
+    get_space_tickets.pagination_mode = 'page'
 
     """ Get possible ticket statuses for a space """
     get_ticket_statuses = bind_api(
@@ -118,12 +119,21 @@ class API(object):
         )(self, *args, **kargs)
 
     """ Get space milestones """
+    get_milestone = bind_api(
+        path='spaces/{space}/milestones/{milestone}.json',
+        method='GET',
+        payload_type='milestone',
+        allowed_params = ['space','milestone']
+    )
+
+    """ Get space milestones """
     get_milestones = bind_api(
         path='spaces/{space}/milestones/all.json',
         method='GET',
         payload_type='milestone', payload_list=True,
-        allowed_params = ['space',]
+        allowed_params = ['space','page','per_page']
     )
+    get_milestones.pagination_mode = 'page'
 
     """ Create milestone """
     def create_milestone(self, milestone, *args, **kargs):
@@ -160,8 +170,9 @@ class API(object):
         path='spaces/{space}/tickets.json',
         method='GET',
         payload_type='ticket', payload_list=True,
-        allowed_params = ['space']
+        allowed_params = ['space', 'page', 'per_page']
     )
+    get_tickets.pagination_mode = 'page'
 
     """ Get ticket """
     get_ticket = bind_api(
@@ -210,8 +221,9 @@ class API(object):
         path='spaces/{space}/tickets/{ticket}/ticket_comments.json',
         method='GET',
         payload_type='ticketcomment', payload_list=True,
-        allowed_params = ['space', 'ticket']
+        allowed_params = ['space', 'ticket', 'page', 'per_page']
     )
+    get_ticket_comments.pagination_mode = 'page'
 
     """ Create ticket comment """
     def create_ticket_comment(self, comment, *args, **kargs):
@@ -238,9 +250,10 @@ class API(object):
     get_documents = bind_api(
         path='spaces/{space}/documents.json',
         method='GET',
-        allowed_params = ['space'],
+        allowed_params = ['space', 'page', 'per_page'],
         payload_type='document', payload_list=True
     )
+    get_documents.pagination_mode = 'page'
 
     """ Get a document by id """
     get_document = bind_api(
