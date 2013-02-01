@@ -117,7 +117,7 @@ def copy_document(file_id, ticket1, ticket2, auth=None):
     try:
         olddoc = ticket1.get_document(file_id)
     except AssemblaError:
-        logger.debug('[Document] not found %s', file_id)
+        logger.debug('[Document] not found (probably deleted) %s', file_id)
         return
     login_url = 'https://www.assembla.com/do_login'
     client = requests.session()
@@ -126,34 +126,43 @@ def copy_document(file_id, ticket1, ticket2, auth=None):
     login_form.fields['user[password]'] = auth[1]
     login_response = submit_form(login_form, open_http=client.request)
     if login_response.status_code != 200:
-        raise AssemblaError('Failed login on file download: ',
-                response=login_response.status_code)
+        raise AssemblaError('Failed on file download, status: %s' % login_response.status_code, response=login_response.content)
     response=client.get(olddoc.url)
     logger.debug('[Document] Attaching %s', olddoc.name)
-    newdoc=ticket2.attach_file(response, olddoc)
-    logger.debug('[Document] Attached with id: %s', newdoc.id)
-    logger.debug('[Document] Finished')
+    try:
+        newdoc=ticket2.attach_file(response, olddoc)
+    except AssemblaError, e:
+        logger.debug('[Document] AssemblaError body:\n\n%s\n', e.response.content)
+        logger.debug('[Document] Failed to attach source document: %s', olddoc.id)
+    else:
+        logger.debug('[Document] Attached with new id: %s', newdoc.id)
+        logger.debug('[Document] Finished')
 
 def copy_ticket_comments(ticket1, ticket2, number_map, auth=None):
     logger.debug('[TicketComment] Starting')
     comments = ticket1.get_comments()
     for c in comments:
-        c_text = getattr(c, 'comment', None)
-        if c.file:
-            if auth: # allows for downloading files from www.assembla.com
-                copy_document(c.file, ticket1, ticket2, auth)
-        else:
-            if c_text:
-                c.comment = remap_references(c.comment, number_map)
-                logger.debug('[TicketComment] Creating for %s', c.id)
-                c = ticket2.create_comment(c)
-                logger.debug('[TicketComment] Created %s', c.id)
+        try:
+            c_text = getattr(c, 'comment', None)
+            if c.file:
+                if auth: # allows for downloading files from www.assembla.com
+                    copy_document(c.file, ticket1, ticket2, auth)
             else:
-                # emulate system comment through regular comment
-                c.comment = prettify(c.ticket_changes)
-                logger.debug('[TicketComment] Emulating for %s', c.id)
-                c = ticket2.create_comment(c)
-                logger.debug('[TicketComment] Emulated %s', c.id)
+                if c_text:
+                    c.comment = remap_references(c.comment, number_map)
+                    logger.debug('[TicketComment] Creating for %s', c.id)
+                    cnew = ticket2.create_comment(c)
+                    logger.debug('[TicketComment] Created %s', cnew.id)
+                else:
+                    # emulate system comment through regular comment
+                    c.comment = prettify(c.ticket_changes)
+                    logger.debug('[TicketComment] Emulating for %s', c.id)
+                    cnew = ticket2.create_comment(c)
+                    logger.debug('[TicketComment] Emulated %s', cnew.id)
+        except AssemblaError, e:
+            logger.debug('[TicketComment] Failed to process %s', c.id)
+            logger.debug('[TicketComment] Response:\n\n%s\n', e.response.content)
+            continue
     logger.debug('[TicketComment] Finished')
 
 def copy_ticket(ticket1, space2, component_map, milestone_map,
@@ -167,16 +176,16 @@ def copy_ticket(ticket1, space2, component_map, milestone_map,
     tcopy.number = number_map[tcopy.number]
     tcopy.description = remap_references(tcopy.description, number_map)
     logger.debug('[Ticket] Creating ticket number %s', tcopy.number)
-    ticket2 = space2.create_ticket(tcopy)
-    logger.debug('[Ticket] Created with id %s', ticket2.id)
     try:
-        copy_ticket_comments(ticket1, ticket2, number_map, auth)
+        ticket2 = space2.create_ticket(tcopy)
     except AssemblaError, e:
-        logger.debug("[Ticket] Comments copy failed")
-        space2.delete_ticket(ticket2.number)
-        logger.debug("[Ticket] Deleted ticket %s", ticket2.number)
+        logger.debug("[Ticket] Error from Assembla:\n\n%s\n", e.response.content)
+        logger.debug("[Ticket] Failed to copy source ticket %s", ticket2.number)
         raise e
-    logger.debug('[Ticket] Finished')
+    else:
+        logger.debug('[Ticket] Created with id %s', ticket2.id)
+        copy_ticket_comments(ticket1, ticket2, number_map, auth)
+        logger.debug('[Ticket] Finished')
     return ticket2
 
 def check_association_ambivalent(a1, a2, id_map):
@@ -266,20 +275,18 @@ def copy_tickets(tickets, space1, space2, component_map, milestone_map,
     logger.debug('[Migration] Starting Ticket copy from %s to %s',
             space1.name, space2.name)
     ticket_id_map = {}
+    failed_tickets = []
     new_tickets_id_number_map = {}
     for t in tickets:
         try:
             ticket2 = copy_ticket(t, space2, component_map, milestone_map, number_map, auth=auth)
         except AssemblaError, e:
-            logger.debug("[Migration] Got an AssemblaError, body:\n\n%s", e.response.content)
-            logger.debug("[Migration] Revertintg migration")
-            for tid, tnum in new_tickets_id_number_map.items():
-                space2.delete_ticket(tnum)
-                logger.debug("[Migration] Deleted ticket %s", tnum)
-            else:
-                break
-        ticket_id_map[t.id] = ticket2.id
-        new_tickets_id_number_map[ticket2.id] = ticket2.number
+            logger.debug("[Migration] Error on ticket %s, Response:\n\n%s", t.number, e.response.content)
+            failed_tickets.append(t)
+        else:
+            ticket_id_map[t.id] = ticket2.id
+            new_tickets_id_number_map[ticket2.id] = ticket2.number
+    logger.debug('[Migration] Failed tickets (from source space): %s', ', '.join([t.number for t in failed_tickets]))
     logger.debug('[Migration] Finished Ticket copy')
     return ticket_id_map
 
