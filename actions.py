@@ -148,7 +148,7 @@ def copy_ticket_comments(ticket1, ticket2, number_map, auth=None):
                 if auth: # allows for downloading files from www.assembla.com
                     copy_document(c.file, ticket1, ticket2, auth)
             else:
-                if c_text:
+                if c_text and c.comment:
                     c.comment = remap_references(c.comment, number_map)
                     logger.debug('[TicketComment] Creating for %s', c.id)
                     cnew = ticket2.create_comment(c)
@@ -174,7 +174,8 @@ def copy_ticket(ticket1, space2, component_map, milestone_map,
     if tcopy.component_id:
         tcopy.component_id = component_map[tcopy.component_id]
     tcopy.number = number_map[tcopy.number]
-    tcopy.description = remap_references(tcopy.description, number_map)
+    if tcopy.description:
+        tcopy.description = remap_references(tcopy.description, number_map)
     logger.debug('[Ticket] Creating ticket number %s', tcopy.number)
     try:
         ticket2 = space2.create_ticket(tcopy)
